@@ -1,0 +1,37 @@
+name: Garnet Runtime Visibility
+
+# Runs the dependency install under the Garnet sensor so the pull request
+# carries a head-bound record of what the install actually did at runtime:
+# every outbound connection with its execution chain and GitHub step.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: garnet-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dep-install:
+    name: Dependency install (recorded)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Garnet Runtime Visibility
+        uses: garnet-org/action@96e9f81ec0f59f2322e8c67b43c4d4017d932ad3 # v2.4.1
+        with:
+          api_token: ${{ secrets.GARNET_API_TOKEN }}
+          jibril_version: v2.16.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies (lifecycle scripts execute here)
+        run: npm ci
+      - name: Build
+        run: npm run build
