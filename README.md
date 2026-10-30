@@ -43,3 +43,7 @@ devin-oidc token \
 Your service must be configured to trust Devin as an OIDC identity provider and accept the requested audience.
 
 See the [`setup-devin-oidc` action documentation](./setup-devin-oidc/README.md) for command options and configuration details.
+
+## Development
+
+CI builds every action with Node.js 20 (`npm ci && npm run build`); each Node.js action must ship its compiled `dist/index.js`.
