@@ -18,6 +18,8 @@ const dirs = readdirSync(root, { withFileTypes: true })
 let built = 0;
 let failed = 0;
 
+console.log(`Building ${dirs.length} action directories`);
+
 for (const dir of dirs) {
   const srcFile = resolve(root, dir, "src", "main.ts");
   const actionFile = resolve(root, dir, "action.yml");
