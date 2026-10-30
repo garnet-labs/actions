@@ -47,3 +47,5 @@ See the [`setup-devin-oidc` action documentation](./setup-devin-oidc/README.md) 
 ## Development
 
 CI builds every action with Node.js 20 (`npm ci && npm run build`); each Node.js action must ship its compiled `dist/index.js`.
+
+Run `npm run validate` before opening a pull request.
