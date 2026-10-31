@@ -6,6 +6,9 @@ name: Garnet Runtime Visibility
 on:
   pull_request:
     branches: [main]
+  # Records main so pull requests compare with their base, not only their previous push.
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
