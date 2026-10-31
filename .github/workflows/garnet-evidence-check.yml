@@ -32,6 +32,24 @@ jobs:
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22
+      # The CLI accepts a record that is still being written as undeterminable
+      # and exits 0, so wait for the record on this head to be finalized first.
+      - name: Wait for the finalized record on this head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for _ in $(seq 1 60); do
+            if gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --jq '.[].body' \
+              | grep -F "garnet:summary" | grep -F "\"commit\":\"${HEAD_SHA}\"" | grep -qF '"status":"finalized"'; then
+              sleep 30
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error title=garnet/evidence::No finalized Runtime Review record for ${HEAD_SHA} after 15 minutes"
+          exit 1
       - name: Runtime Review on the pull request head
         env:
           GITHUB_TOKEN: ${{ github.token }}
