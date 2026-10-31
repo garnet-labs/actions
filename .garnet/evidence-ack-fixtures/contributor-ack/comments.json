@@ -1,0 +1,11 @@
+[
+  {
+    "body": "garnet-ack e82c6f8ea517b41222a9b79ef15ea64659591367\nunpkg[.]com\nExpected dependency install registry.",
+    "html_url": "https://example.invalid/pull/1#comment-contributor-ack",
+    "author_association": "CONTRIBUTOR",
+    "user": {
+      "login": "contributor-reviewer",
+      "type": "User"
+    }
+  }
+]

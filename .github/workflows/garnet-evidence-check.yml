@@ -2,6 +2,7 @@
 # carries the destinations. It reads the Runtime Review record and never judges
 # the pull request.
 # Only additions rooted at Runner.Worker are judged; other roots are logged outside its process tree.
+# Acknowledgements count only from maintainers (human OWNER/MEMBER/COLLABORATOR).
 name: Garnet evidence check
 
 on:

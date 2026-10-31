@@ -2,8 +2,10 @@
   {
     "body": "garnet-ack e82c6f8ea517b41222a9b79ef15ea64659591367\nExpected dependency install registry.",
     "html_url": "https://example.invalid/pull/1#comment-missing-destination",
+    "author_association": "OWNER",
     "user": {
-      "login": "fixture-reviewer"
+      "login": "fixture-reviewer",
+      "type": "User"
     }
   }
 ]

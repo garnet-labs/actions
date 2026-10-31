@@ -84,7 +84,8 @@ destinations_json=$(printf '%s\n' "${judged_destinations[@]}" | jq -R . | jq -s 
 match=$(jq -r --arg head "$head_sha" --arg short "$head_sha_short" --argjson destinations "$destinations_json" '
   first(
     .[]
-    | select((.body | type) == "string" and (.user.login | type) == "string" and (.html_url | type) == "string")
+    | select((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.html_url | type) == "string")
+    | select(.user.type == "User" and ((.author_association // "") | IN("OWNER","MEMBER","COLLABORATOR")))
     | . as $comment
     | select(
         [
@@ -98,6 +99,28 @@ match=$(jq -r --arg head "$head_sha" --arg short "$head_sha_short" --argjson des
     | [$comment.user.login, $comment.html_url] | @tsv
   ) // empty
 ' <<<"$comments_json")
+
+ignored_match=
+if [[ -z "$match" ]]; then
+  ignored_match=$(jq -r --arg head "$head_sha" --arg short "$head_sha_short" --argjson destinations "$destinations_json" '
+    first(
+      .[]
+      | select((.body | type) == "string" and (.user.login | type) == "string" and (.user.type | type) == "string" and (.html_url | type) == "string")
+      | . as $comment
+      | select(
+          [
+            $comment.body
+            | split("\n")[]
+            | sub("\r$"; "")
+            | select(test("^garnet-ack (" + $head + "|" + $short + ")([[:space:]]|$)"))
+          ] | length > 0
+        )
+      | select(all($destinations[]; . as $destination | ($comment.body | contains($destination))))
+      | select($comment.user.type != "User" or ((($comment.author_association // "") | IN("OWNER","MEMBER","COLLABORATOR")) | not))
+      | [$comment.user.login, $comment.user.type, ($comment.author_association // "")] | @tsv
+    ) // empty
+  ' <<<"$comments_json")
+fi
 
 has_ack_label=false
 if jq -e 'any(.[]; .name == "garnet-ack")' <<<"$labels_json" >/dev/null; then
@@ -114,10 +137,15 @@ if [[ "$has_ack_label" == true && -n "$match" ]]; then
   exit 0
 fi
 
+if [[ -n "$ignored_match" ]]; then
+  IFS=$'\t' read -r ignored_author ignored_type ignored_association <<<"$ignored_match"
+  printf "Ignored acknowledgement by @%s (%s, %s): acknowledgements must come from a maintainer, not the pull request's agent or bot.\n" "$ignored_author" "$ignored_type" "$ignored_association"
+fi
+
 printf 'Destinations requiring acknowledgement:\n'
 for destination in "${judged_destinations[@]}"; do
   printf -- '- `%s`\n' "$destination"
 done
 printf '%s\n' '::error title=garnet/evidence: unacknowledged runtime change::'
-printf '%s\n' 'If every destination above is intended by this pull request, acknowledge it: comment a line `garnet-ack <head sha>` followed by each destination exactly as listed and why it is expected, then add the `garnet-ack` label to re-run this check. A new push needs a new acknowledgement. Evidence never approves; the acknowledgement is the reviewer'\''s decision.'
+printf '%s\n' 'A maintainer decides whether every destination above is intended: they comment a line `garnet-ack <head sha>` followed by each destination exactly as listed and why it is expected, then add the `garnet-ack` label to re-run this check. Agents and bots cannot acknowledge. A new push needs a new acknowledgement. Evidence never approves; the acknowledgement is the maintainer'\''s decision.'
 exit 2

@@ -2,8 +2,10 @@
   {
     "body": "garnet-ack 0000000000000000000000000000000000000000\nunpkg[.]com\nExpected dependency install registry.",
     "html_url": "https://example.invalid/pull/1#comment-wrong-sha",
+    "author_association": "OWNER",
     "user": {
-      "login": "fixture-reviewer"
+      "login": "fixture-reviewer",
+      "type": "User"
     }
   }
 ]
