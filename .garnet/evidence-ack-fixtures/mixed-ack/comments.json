@@ -1,0 +1,9 @@
+[
+  {
+    "body": "garnet-ack e82c6f8\nunpkg[.]com\nExpected dependency install registry.",
+    "html_url": "https://example.invalid/pull/1#comment-mixed-ack",
+    "user": {
+      "login": "fixture-reviewer"
+    }
+  }
+]

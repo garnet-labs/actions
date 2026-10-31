@@ -1,0 +1,2 @@
+- + `unpkg[.]com` — `Runner.Worker` → `bash` → `node` → `node` · `Garnet Runtime Visibility / dep-install`
+- + `169.254.169[.]254` — `systemd` → `python3.12` → `python3.12` · `Garnet Runtime Visibility / dep-install`
