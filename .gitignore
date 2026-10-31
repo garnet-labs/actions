@@ -1,4 +1,3 @@
 node_modules/
-tsconfig.base.json
 *.log
 .DS_Store
