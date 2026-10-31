@@ -3,6 +3,7 @@
   "name": "cognition-actions",
   "description": "Reusable actions for authenticating Devin sessions with OIDC",
   "scripts": {
+    "postinstall": "node scripts/check-node-lts.mjs",
     "build": "node scripts/build.mjs",
     "lint": "tsc --noEmit"
   },
