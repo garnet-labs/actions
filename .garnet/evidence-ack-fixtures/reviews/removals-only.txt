@@ -1,0 +1,1 @@
+- - `legacy[.]example` — `Runner.Worker` → `bash` · `Example workflow`
