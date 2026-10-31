@@ -1,20 +1,8 @@
-# Acceptance gate: publishes the `garnet/evidence` check run on the pull
-# request head. It succeeds only when a finalized Garnet Runtime Review comment,
-# written by the Garnet App, is bound to the exact head; a record still being
-# written is pending; missing, stale, or third-party evidence fails.
-# Runs from the default branch after a recording workflow completes and again
-# each time the Garnet App posts or edits its comment, so the check follows the
-# record as more jobs finish. It never checks out or executes pull request code.
-# Mark the check `garnet/evidence` required in branch protection to make
-# evidence a merge condition.
+# Superseded by garnet-evidence-check.yml.
 name: Garnet evidence gate
 
-on: # zizmor: ignore[dangerous-triggers] default branch only, no pull request code runs here
-  workflow_run:
-    workflows: ["Garnet Runtime Visibility"]
-    types: [completed]
-  issue_comment:
-    types: [created, edited]
+on:
+  workflow_dispatch: {}
 
 permissions: {}
 
