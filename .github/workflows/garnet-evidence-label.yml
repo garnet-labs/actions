@@ -60,7 +60,7 @@ jobs:
           # finalized garnet:summary for that same commit. Anything else is "no
           # finalized record for this head": pending, stale, missing, or malformed.
           finalized=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-            --jq --arg head "${head}" '
+            | jq -r --arg head "${head}" '
               [ .[][]
                 | select(.user.login as $u | ["garnet-runtime-review[bot]","garnet-runtime-review-dev[bot]","garnet-ai[bot]"] | index($u) != null)
                 | select(.body | contains("<!-- garnet-runtime-review -->"))
