@@ -1,0 +1,81 @@
+# Keeps the `runtime-evidence-ready` label equal to one fact: the Garnet
+# Runtime Review comment bound to the pull request's current head
+# (`garnet:commit` == head and `garnet:summary.status` == finalized) exists.
+# The label is added when that record finalizes and removed as soon as the
+# head moves, so reviewers whose rules are scoped to the label run with the
+# record already present. Runs from the default branch with the repository
+# token after each Garnet App comment edit and each push to the pull request.
+# It never checks out or executes pull request code; it reads the machine
+# markers of the comment, never its prose.
+name: Garnet evidence label
+
+on: # zizmor: ignore[dangerous-triggers] default branch only, no checkout, no pull request code runs here
+  issue_comment:
+    types: [created, edited]
+  pull_request_target:
+    types: [synchronize]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to reconcile
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: garnet-evidence-label-${{ github.event.issue.number || github.event.pull_request.number || inputs.pr }}
+
+jobs:
+  label:
+    name: Label the head-bound finalized record
+    if: >-
+      github.event_name != 'issue_comment'
+      || (github.event.issue.pull_request != null
+          && contains(fromJSON('["garnet-runtime-review[bot]","garnet-runtime-review-dev[bot]","garnet-ai[bot]"]'), github.event.comment.user.login)
+          && contains(github.event.comment.body, '<!-- garnet-runtime-review -->'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write # add and remove the label
+      pull-requests: write # read the pull request head and labels
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LABEL: runtime-evidence-ready
+      PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || inputs.pr }}
+    steps:
+      - name: Reconcile the label with the record bound to the current head
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+          state=$(jq -r '.state' <<<"${pr}")
+          head=$(jq -r '.head.sha' <<<"${pr}")
+          has_label=$(jq -r --arg l "${LABEL}" 'any(.labels[]; .name == $l)' <<<"${pr}")
+          if [ "${state}" != "open" ]; then
+            echo "PR #${PR_NUMBER} is ${state}; nothing to do."
+            exit 0
+          fi
+          # Trusted App comment, bound by garnet:commit to the current head, with a
+          # finalized garnet:summary for that same commit. Anything else is "no
+          # finalized record for this head": pending, stale, missing, or malformed.
+          finalized=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq --arg head "${head}" '
+              [ .[][]
+                | select(.user.login as $u | ["garnet-runtime-review[bot]","garnet-runtime-review-dev[bot]","garnet-ai[bot]"] | index($u) != null)
+                | select(.body | contains("<!-- garnet-runtime-review -->"))
+                | select(.body | test("<!--\\s*garnet-(control-plane|action)-pr-comment:v1"))
+                | select((.body | capture("<!--\\s*garnet:commit\\s+(?<sha>[0-9a-f]{40})\\s*-->") | .sha) == $head)
+                | (.body | capture("<!-- garnet:summary (?<json>\\{.*?\\}) -->") | .json | fromjson)
+                | select(.status == "finalized" and .commit == $head)
+              ] | length > 0')
+          echo "PR #${PR_NUMBER} head ${head:0:7}: finalized record bound=${finalized}, label present=${has_label}"
+          if [ "${finalized}" = "true" ] && [ "${has_label}" = "false" ]; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels" -f "labels[]=${LABEL}" >/dev/null
+            echo "Added ${LABEL}: the record for head ${head:0:7} is finalized."
+          elif [ "${finalized}" != "true" ] && [ "${has_label}" = "true" ]; then
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${LABEL}" >/dev/null
+            echo "Removed ${LABEL}: no finalized record is bound to head ${head:0:7}."
+          else
+            echo "Label already matches the record; nothing to do."
+          fi
