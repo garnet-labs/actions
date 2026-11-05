@@ -20,12 +20,16 @@ permissions: {}
 jobs:
   mirror:
     name: Mirror head-bound record into the description
+    # Off unless the repository variable GARNET_EVIDENCE_MIRROR is "enabled":
+    # the label workflow (garnet-evidence-label.yml) is the only path that
+    # sequences reviewers after the record while that experiment runs.
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request')
+      vars.GARNET_EVIDENCE_MIRROR == 'enabled'
+      && ((github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request')
       || (github.event_name == 'issue_comment'
           && github.event.issue.pull_request != null
           && contains(fromJSON('["garnet-runtime-review[bot]","garnet-runtime-review-dev[bot]","garnet-ai[bot]"]'), github.event.comment.user.login)
-          && contains(github.event.comment.body, '<!-- garnet-runtime-review -->'))
+          && contains(github.event.comment.body, '<!-- garnet-runtime-review -->')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
