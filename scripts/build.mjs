@@ -5,6 +5,9 @@ import { execSync } from "child_process";
 import { readdirSync, existsSync } from "fs";
 import { resolve } from "path";
 
+// Fails fast on a misspelled package.json field before any action is bundled.
+await import("./validate-package.mjs");
+
 const root = resolve(import.meta.dirname, "..");
 const dirs = readdirSync(root, { withFileTypes: true })
   .filter(
