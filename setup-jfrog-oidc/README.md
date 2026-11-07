@@ -39,7 +39,20 @@ curl -H "Authorization: Bearer $TOKEN" https://mycompany.jfrog.io/artifactory/ap
 | `subject-keys` | No | `org_id` | Space-delimited Devin claims used to form the token subject |
 | `server-id` | No | `default` | JFrog CLI server configuration ID |
 | `install-jfrog-cli` | No | `true` | Whether to install the JFrog CLI if it is absent |
-| `jfrog-cli-version` | No | `2.72.2` | JFrog CLI version to install |
+| `jfrog-cli-version` | No | `2.72.2` | JFrog CLI version in `X.Y.Z` format to install when no CLI exists; ignored when `install-jfrog-cli` is `false` |
+
+To pin the download to a specific release, set `jfrog-cli-version`:
+
+```yaml
+initialize:
+  - uses: github.com/CognitionAI/actions/setup-jfrog-oidc@main
+    with:
+      jfrog-url: "https://mycompany.jfrog.io"
+      provider-name: "devin-oidc"
+      jfrog-cli-version: "2.72.2"
+```
+
+Omitting the input keeps the default download at `2.72.2`. The action reuses an existing `jf` or `.jf-real` binary rather than replacing it with the requested version. Version values must contain three numeric components separated by dots, without a `v` prefix, suffix, or URL.
 
 ## JFrog prerequisites
 
