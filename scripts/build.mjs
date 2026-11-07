@@ -1,8 +1,8 @@
 /**
  * Build script: compiles each action's src/main.ts into dist/index.js via ncc.
  */
-import { execSync } from "child_process";
-import { readdirSync, existsSync } from "fs";
+import { execFileSync } from "child_process";
+import { readdirSync, existsSync, rmSync } from "fs";
 import { resolve } from "path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -26,16 +26,18 @@ for (const dir of dirs) {
   process.stdout.write(`  Building ${dir}...`);
   try {
     const outDir = resolve(root, dir, "dist");
-    execSync(
-      `npx ncc build ${srcFile} -o ${outDir} --license licenses.txt -q`,
+    // Paths go to ncc as argv, never through a shell, so a checkout path with spaces builds.
+    execFileSync(
+      "npx",
+      ["ncc", "build", srcFile, "-o", outDir, "--license", "licenses.txt", "-q"],
       { cwd: root, stdio: "pipe" },
     );
     // Remove type declaration files that ncc copies from other actions
-    execSync(
-      `find ${outDir} -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null; ` +
-      `rm -f ${outDir}/*.d.ts ${outDir}/*.d.ts.map ${outDir}/*.js.map 2>/dev/null; true`,
-      { cwd: root, stdio: "pipe" },
-    );
+    for (const entry of readdirSync(outDir, { withFileTypes: true })) {
+      if (entry.isDirectory() || /\.(d\.ts|d\.ts\.map|js\.map)$/.test(entry.name)) {
+        rmSync(resolve(outDir, entry.name), { recursive: true, force: true });
+      }
+    }
     console.log(" OK");
     built++;
   } catch (e) {

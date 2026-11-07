@@ -26,6 +26,7 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run build
+      - run: npm test
       - name: Verify dist/index.js for Node.js actions
         run: |
           MISSING=0
