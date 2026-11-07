@@ -53,6 +53,51 @@ jobs:
           done
           echo "::error title=garnet/evidence::No finalized Runtime Review record for ${HEAD_SHA} after 15 minutes"
           exit 1
+      - name: Check finalized App workload additions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments?per_page=100" |
+            jq --arg head "$HEAD_SHA" '
+              [add[]
+                | select(.user.login == "garnet-runtime-review[bot]" and .user.type == "Bot")
+                | select(.body | contains("<!-- garnet-control-plane-pr-comment:v1:app.garnet.ai -->"))
+                | select(.body | contains("<!-- garnet:commit " + $head + " -->"))
+                | . as $comment
+                | (.body | capture("<!-- garnet:summary (?<json>[^\\n]+?) -->").json | fromjson) as $summary
+                | select($summary.commit == $head and $summary.status == "finalized")
+                | $comment + {summary: $summary}]
+              | sort_by(.id) | last // error("No trusted finalized App summary for this head")
+            ' > "$RUNNER_TEMP/app-record.json"
+          if ! jq -e '.summary | (.added > 0 or .changed > 0)' "$RUNNER_TEMP/app-record.json" > /dev/null; then
+            echo 'PASS: finalized App summary reports no workload additions or changed jobs (not a complete-capture claim).'
+            exit 0
+          fi
+          echo 'FAIL: finalized App summary reports workload additions or changed jobs, regardless of capture quality.'
+          jq -r '.html_url' "$RUNNER_TEMP/app-record.json"
+          jq -r '
+            reduce (.body | split("\n")[]) as $line
+              ({job: "unknown job", workload: false, diff: false, rows: []};
+                if ($line | startswith("<summary><b>")) then
+                  .job = ($line | capture("<summary><b>(?<job>.*?)</b>").job)
+                elif ($line | startswith("<sub>Workload")) then .workload = true
+                elif ($line | startswith("<sub>Runner")) then .workload = false
+                elif $line == "```diff" then .diff = true
+                elif ($line | startswith("```")) then .diff = false
+                elif .workload and .diff and ($line | startswith("+")) then
+                  .rows += [{job: .job, line: $line}]
+                else . end)
+            | .rows[] | [.job, .line] | @tsv
+          ' "$RUNNER_TEMP/app-record.json" > "$RUNNER_TEMP/app-additions.tsv"
+          : > "$RUNNER_TEMP/app-review.txt"
+          while IFS=$'\t' read -r job line; do
+            printf '%s: %s\n' "$job" "$line"
+            destination=$(printf '%s\n' "$line" | sed -E 's/^\+[ │├└─›]*//; s/ \(.*$//')
+            printf -- '- + `%s` — `Runner.Worker` — %s\n' "$destination" "$job" >> "$RUNNER_TEMP/app-review.txt"
+          done < "$RUNNER_TEMP/app-additions.tsv"
+          bash .garnet/evidence-ack.sh "$RUNNER_TEMP/app-review.txt"
       - name: Runtime Review on the pull request head
         env:
           GITHUB_TOKEN: ${{ github.token }}
