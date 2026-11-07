@@ -35,5 +35,7 @@ jobs:
           node-version: "20"
       - name: Install dependencies (lifecycle scripts execute here)
         run: npm ci
+      - name: Test shared helpers
+        run: npm test
       - name: Build
         run: npm run build

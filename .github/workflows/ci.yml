@@ -16,6 +16,7 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run lint
+      - run: npm test
 
   build:
     runs-on: ubuntu-latest
