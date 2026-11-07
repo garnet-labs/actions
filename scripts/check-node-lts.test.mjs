@@ -39,6 +39,7 @@ async function run({ releases = [{ version: "v20.1.0", lts: "Iron" }],
       const request = new EventEmitter();
       const response = failure === "body-timeout" ? new Readable({ read() {} })
         : Readable.from([failure === "json" ? "{" : JSON.stringify(isLts ? releases : schedule)]);
+      response.on("error", () => {});
       response.statusCode = failure === "http" ? 503 : 200;
       request.destroy = (error) => {
         response.destroy(error);
