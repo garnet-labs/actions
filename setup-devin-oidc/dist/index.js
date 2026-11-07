@@ -25719,11 +25719,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -25878,7 +25878,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 

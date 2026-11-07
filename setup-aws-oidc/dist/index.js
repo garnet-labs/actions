@@ -25687,26 +25687,7 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const drs_1 = __nccwpck_require__(1581);
 const devin_oidc_cli_1 = __nccwpck_require__(7881);
-function credentialHelperScript(inputs) {
-    // The exchanged OIDC token is short-lived (~1 minute), so a static
-    // web_identity_token_file would go stale. credential_process is re-run by
-    // the AWS CLI/SDKs whenever the assumed-role credentials expire, fetching a
-    // fresh token each time. AssumeRoleWithWebIdentity is unsigned, so the
-    // helper needs no pre-existing AWS credentials. The inner call runs with an
-    // empty config and no profile selection so it cannot recurse into (or fail
-    // to resolve) the profile it is providing credentials for.
-    return `#!/usr/bin/env bash
-set -euo pipefail
-token=$(devin-oidc token --audience "${inputs.audience}" --subject-keys "${inputs.subjectKeys}")
-exec env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE AWS_CONFIG_FILE=/dev/null aws sts assume-role-with-web-identity \\
-  --role-arn "${inputs.roleArn}" \\
-  --role-session-name "${inputs.sessionName}" \\
-  --web-identity-token "$token" \\
-  --duration-seconds ${inputs.durationSeconds} \\
-  --query 'Credentials.{Version: \`1\`, AccessKeyId: AccessKeyId, SecretAccessKey: SecretAccessKey, SessionToken: SessionToken, Expiration: Expiration}' \\
-  --output json
-`;
-}
+const scripts_1 = __nccwpck_require__(9575);
 function appendProfile(profile, helperPath, region) {
     const header = profile === "default" ? "[default]" : `[profile ${profile}]`;
     const configPath = path.join(process.env.HOME || "/home/ubuntu", ".aws", "config");
@@ -25738,7 +25719,7 @@ async function main() {
         const setDefaultProfile = core.getInput("set-default-profile") === "true";
         await (0, devin_oidc_cli_1.installDevinOidcCli)();
         const helperPath = `/usr/local/bin/devin-oidc-aws-credentials-${profile}`;
-        await (0, drs_1.writeFileWithSudo)(helperPath, credentialHelperScript({ roleArn, audience, subjectKeys, sessionName, durationSeconds }));
+        await (0, drs_1.writeFileWithSudo)(helperPath, (0, scripts_1.credentialHelperScript)({ roleArn, audience, subjectKeys, sessionName, durationSeconds }));
         await (0, drs_1.run)(`sudo chmod 755 "${helperPath}"`);
         appendProfile(profile, helperPath, region);
         if (setDefaultProfile && profile !== "default")
@@ -25749,6 +25730,37 @@ async function main() {
     }
 }
 main();
+
+
+/***/ }),
+
+/***/ 9575:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.credentialHelperScript = credentialHelperScript;
+function credentialHelperScript(inputs) {
+    // The exchanged OIDC token is short-lived (~1 minute), so a static
+    // web_identity_token_file would go stale. credential_process is re-run by
+    // the AWS CLI/SDKs whenever the assumed-role credentials expire, fetching a
+    // fresh token each time. AssumeRoleWithWebIdentity is unsigned, so the
+    // helper needs no pre-existing AWS credentials. The inner call runs with an
+    // empty config and no profile selection so it cannot recurse into (or fail
+    // to resolve) the profile it is providing credentials for.
+    return `#!/usr/bin/env bash
+set -euo pipefail
+token=$(devin-oidc token --audience "${inputs.audience}" --subject-keys "${inputs.subjectKeys}")
+exec env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE AWS_CONFIG_FILE=/dev/null aws sts assume-role-with-web-identity \\
+  --role-arn "${inputs.roleArn}" \\
+  --role-session-name "${inputs.sessionName}" \\
+  --web-identity-token "$token" \\
+  --duration-seconds ${inputs.durationSeconds} \\
+  --query 'Credentials.{Version: \`1\`, AccessKeyId: AccessKeyId, SecretAccessKey: SecretAccessKey, SessionToken: SessionToken, Expiration: Expiration}' \\
+  --output json
+`;
+}
 
 
 /***/ }),
@@ -25774,11 +25786,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -25933,7 +25945,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 
