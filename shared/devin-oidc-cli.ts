@@ -18,7 +18,7 @@ import { run, writeFileWithSudo } from "./drs";
 
 export const DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
 
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+export const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail

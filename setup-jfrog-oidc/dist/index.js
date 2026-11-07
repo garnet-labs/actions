@@ -25685,6 +25685,92 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const drs_1 = __nccwpck_require__(1581);
 const devin_oidc_cli_1 = __nccwpck_require__(7881);
+const scripts_1 = __nccwpck_require__(4104);
+async function installJfrogCli(version) {
+    if (await (0, drs_1.commandExists)(".jf-real")) {
+        const current = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
+        core.info(`JFrog CLI already installed: ${current}`);
+        return;
+    }
+    if (await (0, drs_1.commandExists)("jf")) {
+        // Move existing jf to .jf-real before installing wrapper
+        const jfPath = (await (0, drs_1.run)("which jf", { silent: true })).trim();
+        if (jfPath) {
+            await (0, drs_1.run)(`sudo mv "${jfPath}" /usr/local/bin/.jf-real`);
+            const current = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
+            core.info(`Moved existing JFrog CLI to .jf-real: ${current}`);
+            return;
+        }
+    }
+    const arch = await (0, drs_1.getArch)();
+    const goArch = arch === "arm64" ? "arm64" : "amd64";
+    const url = `https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${version}/jfrog-cli-linux-${goArch}/jf`;
+    core.info(`Installing JFrog CLI ${version} from ${url}`);
+    await (0, drs_1.run)(`sudo curl -fsSL "${url}" -o /usr/local/bin/.jf-real`);
+    await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/.jf-real");
+    const installed = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
+    core.info(`Installed: ${installed}`);
+}
+async function main() {
+    try {
+        const jfrogUrl = core.getInput("jfrog-url", { required: true });
+        const providerName = core.getInput("provider-name", { required: true });
+        const audience = core.getInput("audience") || jfrogUrl;
+        const subjectKeys = core.getInput("subject-keys") || "org_id";
+        const serverId = core.getInput("server-id") || "default";
+        const shouldInstall = core.getInput("install-jfrog-cli") !== "false";
+        const cliVersion = core.getInput("jfrog-cli-version") || "2.72.2";
+        // 1. Install devin-oidc CLI
+        await (0, devin_oidc_cli_1.installDevinOidcCli)();
+        // 2. Install JFrog CLI (as .jf-real)
+        if (shouldInstall) {
+            await installJfrogCli(cliVersion);
+        }
+        else {
+            // Move existing jf to .jf-real if not already done
+            if (!(await (0, drs_1.commandExists)(".jf-real")) && (await (0, drs_1.commandExists)("jf"))) {
+                const jfPath = (await (0, drs_1.run)("which jf", { silent: true })).trim();
+                if (jfPath && jfPath !== "/usr/local/bin/.jf-real") {
+                    await (0, drs_1.run)(`sudo mv "${jfPath}" /usr/local/bin/.jf-real`);
+                }
+            }
+        }
+        // 3. Install refresh helper
+        await (0, drs_1.writeFileWithSudo)("/usr/local/bin/devin-oidc-jfrog-refresh", (0, scripts_1.refreshScript)({ jfrogUrl, providerName, audience, subjectKeys, serverId }));
+        await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/devin-oidc-jfrog-refresh");
+        // 4. Install jf wrapper
+        await (0, drs_1.writeFileWithSudo)("/usr/local/bin/jf", (0, scripts_1.wrapperScript)());
+        await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/jf");
+        // 5. Initial token exchange (non-fatal — wrapper handles refresh at runtime)
+        const { exitCode: refreshExit, stdout: refreshOut } = await (0, drs_1.tryRun)("/usr/local/bin/devin-oidc-jfrog-refresh", { silent: true });
+        if (refreshExit !== 0) {
+            core.warning("Initial token exchange failed — auth will be attempted on first jf command via the wrapper");
+        }
+        else if (!refreshOut.trim()) {
+            core.warning("Initial token exchange returned empty — auth may not work until the session has a valid OIDC token");
+        }
+        // 6. Export JFROG_URL
+        (0, drs_1.exportVariable)("JFROG_URL", jfrogUrl);
+        core.info("JFrog OIDC configured. Use 'jf npm install', 'jf docker pull', etc. " +
+            "Auth refreshes automatically on 401.");
+    }
+    catch (error) {
+        core.setFailed(error instanceof Error ? error.message : String(error));
+    }
+}
+main();
+
+
+/***/ }),
+
+/***/ 4104:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.refreshScript = refreshScript;
+exports.wrapperScript = wrapperScript;
 /**
  * Shell script that exchanges a Devin OIDC token for a JFrog access token
  * and updates the jf CLI config. Called by the jf wrapper on auth failure,
@@ -25770,79 +25856,6 @@ cat "$stderr_file" >&2
 exit $rc
 `;
 }
-async function installJfrogCli(version) {
-    if (await (0, drs_1.commandExists)(".jf-real")) {
-        const current = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
-        core.info(`JFrog CLI already installed: ${current}`);
-        return;
-    }
-    if (await (0, drs_1.commandExists)("jf")) {
-        // Move existing jf to .jf-real before installing wrapper
-        const jfPath = (await (0, drs_1.run)("which jf", { silent: true })).trim();
-        if (jfPath) {
-            await (0, drs_1.run)(`sudo mv "${jfPath}" /usr/local/bin/.jf-real`);
-            const current = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
-            core.info(`Moved existing JFrog CLI to .jf-real: ${current}`);
-            return;
-        }
-    }
-    const arch = await (0, drs_1.getArch)();
-    const goArch = arch === "arm64" ? "arm64" : "amd64";
-    const url = `https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${version}/jfrog-cli-linux-${goArch}/jf`;
-    core.info(`Installing JFrog CLI ${version} from ${url}`);
-    await (0, drs_1.run)(`sudo curl -fsSL "${url}" -o /usr/local/bin/.jf-real`);
-    await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/.jf-real");
-    const installed = await (0, drs_1.run)("/usr/local/bin/.jf-real --version", { silent: true });
-    core.info(`Installed: ${installed}`);
-}
-async function main() {
-    try {
-        const jfrogUrl = core.getInput("jfrog-url", { required: true });
-        const providerName = core.getInput("provider-name", { required: true });
-        const audience = core.getInput("audience") || jfrogUrl;
-        const subjectKeys = core.getInput("subject-keys") || "org_id";
-        const serverId = core.getInput("server-id") || "default";
-        const shouldInstall = core.getInput("install-jfrog-cli") !== "false";
-        const cliVersion = core.getInput("jfrog-cli-version") || "2.72.2";
-        // 1. Install devin-oidc CLI
-        await (0, devin_oidc_cli_1.installDevinOidcCli)();
-        // 2. Install JFrog CLI (as .jf-real)
-        if (shouldInstall) {
-            await installJfrogCli(cliVersion);
-        }
-        else {
-            // Move existing jf to .jf-real if not already done
-            if (!(await (0, drs_1.commandExists)(".jf-real")) && (await (0, drs_1.commandExists)("jf"))) {
-                const jfPath = (await (0, drs_1.run)("which jf", { silent: true })).trim();
-                if (jfPath && jfPath !== "/usr/local/bin/.jf-real") {
-                    await (0, drs_1.run)(`sudo mv "${jfPath}" /usr/local/bin/.jf-real`);
-                }
-            }
-        }
-        // 3. Install refresh helper
-        await (0, drs_1.writeFileWithSudo)("/usr/local/bin/devin-oidc-jfrog-refresh", refreshScript({ jfrogUrl, providerName, audience, subjectKeys, serverId }));
-        await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/devin-oidc-jfrog-refresh");
-        // 4. Install jf wrapper
-        await (0, drs_1.writeFileWithSudo)("/usr/local/bin/jf", wrapperScript());
-        await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/jf");
-        // 5. Initial token exchange (non-fatal — wrapper handles refresh at runtime)
-        const { exitCode: refreshExit, stdout: refreshOut } = await (0, drs_1.tryRun)("/usr/local/bin/devin-oidc-jfrog-refresh", { silent: true });
-        if (refreshExit !== 0) {
-            core.warning("Initial token exchange failed — auth will be attempted on first jf command via the wrapper");
-        }
-        else if (!refreshOut.trim()) {
-            core.warning("Initial token exchange returned empty — auth may not work until the session has a valid OIDC token");
-        }
-        // 6. Export JFROG_URL
-        (0, drs_1.exportVariable)("JFROG_URL", jfrogUrl);
-        core.info("JFrog OIDC configured. Use 'jf npm install', 'jf docker pull', etc. " +
-            "Auth refreshes automatically on 401.");
-    }
-    catch (error) {
-        core.setFailed(error instanceof Error ? error.message : String(error));
-    }
-}
-main();
 
 
 /***/ }),
@@ -25868,11 +25881,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -26027,7 +26040,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 
