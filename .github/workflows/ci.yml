@@ -16,6 +16,7 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run lint
+      - run: node --experimental-vm-modules --test scripts/check-node-lts.test.mjs
 
   build:
     runs-on: ubuntu-latest
