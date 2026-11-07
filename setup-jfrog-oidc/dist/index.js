@@ -25804,6 +25804,9 @@ async function main() {
         const serverId = core.getInput("server-id") || "default";
         const shouldInstall = core.getInput("install-jfrog-cli") !== "false";
         const cliVersion = core.getInput("jfrog-cli-version") || "2.72.2";
+        if (shouldInstall && !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(cliVersion)) {
+            throw new Error("jfrog-cli-version must be a version in X.Y.Z format (for example, 2.72.2)");
+        }
         // 1. Install devin-oidc CLI
         await (0, devin_oidc_cli_1.installDevinOidcCli)();
         // 2. Install JFrog CLI (as .jf-real)
