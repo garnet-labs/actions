@@ -36,6 +36,12 @@ jobs:
           node-version: "20"
       - run: npm ci
       - run: npm run build
+      - name: Verify committed dist/ matches the sources
+        run: |
+          if ! git diff --exit-code --stat -- '*/dist/'; then
+            echo "ERROR: dist/ is stale; run npm run build and commit the result"
+            exit 1
+          fi
       - name: Verify dist/index.js for Node.js actions
         run: |
           MISSING=0
