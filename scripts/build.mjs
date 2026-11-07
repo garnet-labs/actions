@@ -2,7 +2,7 @@
  * Build script: compiles each action's src/main.ts into dist/index.js via ncc.
  */
 import { execSync } from "child_process";
-import { readdirSync, existsSync } from "fs";
+import { readdirSync, existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -14,6 +14,8 @@ const dirs = readdirSync(root, { withFileTypes: true })
       !["node_modules", "shared", "scripts", "lib"].includes(d.name),
   )
   .map((d) => d.name);
+
+await warnIfNccOutdated();
 
 let built = 0;
 let failed = 0;
@@ -46,3 +48,31 @@ for (const dir of dirs) {
 
 console.log(`\nBuilt ${built} actions, ${failed} failed.`);
 if (failed > 0) process.exit(1);
+
+async function warnIfNccOutdated() {
+  try {
+    const pkg = resolve(root, "node_modules", "@vercel", "ncc", "package.json");
+    const installed = JSON.parse(readFileSync(pkg, "utf8")).version;
+    const response = await fetch("https://registry.npmjs.org/@vercel/ncc/latest", {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return;
+    const latest = (await response.json()).version;
+    if (compareVersions(installed, latest) < 0) {
+      console.warn(
+        `  Warning: @vercel/ncc ${installed} is installed, but ${latest} is the latest release.`,
+      );
+    }
+  } catch {
+    // Offline or not installed: the check is advisory and never blocks the build.
+  }
+}
+
+function compareVersions(a, b) {
+  const pa = a.split("-")[0].split(".").map(Number);
+  const pb = b.split("-")[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+  }
+  return 0;
+}
