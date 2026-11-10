@@ -37,3 +37,5 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Hold the job open (label-after-Ready timing test, not for merge)
+        run: sleep 270
