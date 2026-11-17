@@ -27,3 +27,28 @@ try {
 } finally {
   clearTimeout(timeout);
 }
+
+try {
+  const response = await new Promise((resolve, reject) => {
+    const request = get("https://raw.githubusercontent.com/nodejs/Release/main/schedule.json", resolve);
+    request.on("error", reject);
+    timeout = setTimeout(() => request.destroy(new Error("Request timed out")), 5000);
+  });
+  if (response.statusCode === 200) {
+    response.setEncoding("utf8");
+    let body = "";
+    for await (const chunk of response) body += chunk;
+    const schedule = JSON.parse(body);
+    const major = process.versions.node.split(".")[0];
+    const end = schedule[`v${major}`]?.end;
+    const today = new Date().toISOString().slice(0, 10);
+    if (typeof end === "string" && /^\d{4}-\d{2}-\d{2}$/.test(end) && today > end) {
+      console.warn(`Warning: Node.js ${major} reached end-of-life on ${end}. Use a supported LTS major for development.`);
+    }
+  } else {
+    response.destroy();
+  }
+} catch {
+} finally {
+  clearTimeout(timeout);
+}
