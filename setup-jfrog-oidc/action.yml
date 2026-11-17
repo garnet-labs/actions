@@ -25,7 +25,7 @@ inputs:
     required: false
     default: "true"
   jfrog-cli-version:
-    description: "JFrog CLI version to install (ignored if install-jfrog-cli is 'false')"
+    description: "JFrog CLI version in X.Y.Z format to install when no CLI exists (ignored if install-jfrog-cli is 'false')"
     required: false
     default: "2.72.2"
 runs:
