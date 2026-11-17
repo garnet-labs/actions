@@ -19,6 +19,12 @@ try {
     if (!hasLtsRelease) {
       console.warn(`Warning: Node.js ${major} has no LTS release. Use an LTS major for development.`);
     }
+    // Advisory only: show when this major leaves support.
+    try {
+      const cycles = await (await fetch("https://endoflife.date/api/nodejs.json")).json();
+      const eol = cycles.find((c) => String(c.cycle) === major)?.eol;
+      if (eol) console.log(`Node.js ${major} end of life: ${eol}`);
+    } catch {}
   } else {
     response.destroy();
   }
