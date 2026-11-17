@@ -18,6 +18,17 @@ const dirs = readdirSync(root, { withFileTypes: true })
 let built = 0;
 let failed = 0;
 
+console.log(`Building ${dirs.length} action directories`);
+
+// Surface ncc drift in the build log: the version this repo pins versus the latest published one.
+try {
+  const response = await fetch("https://unpkg.com/@vercel/ncc/package.json");
+  const latest = (await response.json()).version;
+  console.log(`  ncc latest published: ${latest}`);
+} catch {
+  console.log("  ncc latest published: unavailable");
+}
+
 for (const dir of dirs) {
   const srcFile = resolve(root, dir, "src", "main.ts");
   const actionFile = resolve(root, dir, "action.yml");
