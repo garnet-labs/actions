@@ -5,7 +5,8 @@
   "scripts": {
     "postinstall": "node scripts/check-node-lts.mjs",
     "build": "node scripts/build.mjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --test scripts/build.test.mjs"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
