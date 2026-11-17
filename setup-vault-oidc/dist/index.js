@@ -25687,6 +25687,77 @@ const fs = __importStar(__nccwpck_require__(9896));
 const path = __importStar(__nccwpck_require__(6928));
 const drs_1 = __nccwpck_require__(1581);
 const devin_oidc_cli_1 = __nccwpck_require__(7881);
+const scripts_1 = __nccwpck_require__(3744);
+function writeVaultConfig(helperPath) {
+    const homeDir = process.env.HOME || "/home/ubuntu";
+    const configPath = path.join(homeDir, ".vault");
+    // If ~/.vault already exists as a directory, remove it first; the Vault CLI
+    // expects a plain file here for the token helper configuration.
+    if (fs.existsSync(configPath) && fs.statSync(configPath).isDirectory()) {
+        core.warning(`${configPath} exists as a directory; replacing with config file`);
+        fs.rmSync(configPath, { recursive: true });
+    }
+    fs.writeFileSync(configPath, `token_helper = "${helperPath}"\n`);
+    core.info(`Configured Vault token helper in ${configPath}`);
+}
+async function installVaultCli(version) {
+    if (await (0, drs_1.commandExists)("vault")) {
+        const current = await (0, drs_1.run)("vault version", { silent: true });
+        core.info(`Vault CLI already installed: ${current}`);
+        return;
+    }
+    const arch = await (0, drs_1.getArch)();
+    const goArch = arch === "arm64" ? "arm64" : "amd64";
+    const url = `https://releases.hashicorp.com/vault/${version}/vault_${version}_linux_${goArch}.zip`;
+    core.info(`Installing Vault CLI ${version} from ${url}`);
+    await (0, drs_1.run)(`curl -fsSL "${url}" -o /tmp/vault.zip`);
+    await (0, drs_1.run)("sudo unzip -oq /tmp/vault.zip -d /usr/local/bin");
+    await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/vault");
+    await (0, drs_1.run)("rm -f /tmp/vault.zip");
+    const installed = await (0, drs_1.run)("vault version", { silent: true });
+    core.info(`Installed: ${installed}`);
+}
+async function main() {
+    try {
+        const vaultAddr = core.getInput("vault-addr", { required: true });
+        const role = core.getInput("role", { required: true });
+        const authMount = core.getInput("auth-mount") || "jwt";
+        const audience = core.getInput("audience") || vaultAddr;
+        const subjectKeys = core.getInput("subject-keys") || "org_id";
+        const vaultNamespace = core.getInput("vault-namespace");
+        const shouldInstallVault = core.getInput("install-vault") !== "false";
+        const vaultVersion = core.getInput("vault-version") || "1.17.2";
+        await (0, devin_oidc_cli_1.installDevinOidcCli)();
+        if (shouldInstallVault) {
+            await installVaultCli(vaultVersion);
+        }
+        const helperPath = "/usr/local/bin/devin-oidc-vault-token-helper";
+        await (0, drs_1.writeFileWithSudo)(helperPath, (0, scripts_1.tokenHelperScript)({ vaultAddr, role, authMount, audience, subjectKeys, vaultNamespace }));
+        await (0, drs_1.run)(`sudo chmod 755 "${helperPath}"`);
+        writeVaultConfig(helperPath);
+        (0, drs_1.exportVariable)("VAULT_ADDR", vaultAddr);
+        if (vaultNamespace) {
+            (0, drs_1.exportVariable)("VAULT_NAMESPACE", vaultNamespace);
+        }
+        core.info("HashiCorp Vault OIDC authentication configured. " +
+            "The vault CLI will automatically obtain tokens via Devin OIDC.");
+    }
+    catch (error) {
+        core.setFailed(error instanceof Error ? error.message : String(error));
+    }
+}
+main();
+
+
+/***/ }),
+
+/***/ 3744:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.tokenHelperScript = tokenHelperScript;
 /**
  * Shell script installed as the Vault token helper. On `get`, it exchanges a
  * Devin OIDC token for a Vault client token via the JWT auth method's login
@@ -25763,65 +25834,6 @@ case "\${1:-}" in
 esac
 `;
 }
-function writeVaultConfig(helperPath) {
-    const homeDir = process.env.HOME || "/home/ubuntu";
-    const configPath = path.join(homeDir, ".vault");
-    // If ~/.vault already exists as a directory, remove it first; the Vault CLI
-    // expects a plain file here for the token helper configuration.
-    if (fs.existsSync(configPath) && fs.statSync(configPath).isDirectory()) {
-        core.warning(`${configPath} exists as a directory; replacing with config file`);
-        fs.rmSync(configPath, { recursive: true });
-    }
-    fs.writeFileSync(configPath, `token_helper = "${helperPath}"\n`);
-    core.info(`Configured Vault token helper in ${configPath}`);
-}
-async function installVaultCli(version) {
-    if (await (0, drs_1.commandExists)("vault")) {
-        const current = await (0, drs_1.run)("vault version", { silent: true });
-        core.info(`Vault CLI already installed: ${current}`);
-        return;
-    }
-    const arch = await (0, drs_1.getArch)();
-    const goArch = arch === "arm64" ? "arm64" : "amd64";
-    const url = `https://releases.hashicorp.com/vault/${version}/vault_${version}_linux_${goArch}.zip`;
-    core.info(`Installing Vault CLI ${version} from ${url}`);
-    await (0, drs_1.run)(`curl -fsSL "${url}" -o /tmp/vault.zip`);
-    await (0, drs_1.run)("sudo unzip -oq /tmp/vault.zip -d /usr/local/bin");
-    await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/vault");
-    await (0, drs_1.run)("rm -f /tmp/vault.zip");
-    const installed = await (0, drs_1.run)("vault version", { silent: true });
-    core.info(`Installed: ${installed}`);
-}
-async function main() {
-    try {
-        const vaultAddr = core.getInput("vault-addr", { required: true });
-        const role = core.getInput("role", { required: true });
-        const authMount = core.getInput("auth-mount") || "jwt";
-        const audience = core.getInput("audience") || vaultAddr;
-        const subjectKeys = core.getInput("subject-keys") || "org_id";
-        const vaultNamespace = core.getInput("vault-namespace");
-        const shouldInstallVault = core.getInput("install-vault") !== "false";
-        const vaultVersion = core.getInput("vault-version") || "1.17.2";
-        await (0, devin_oidc_cli_1.installDevinOidcCli)();
-        if (shouldInstallVault) {
-            await installVaultCli(vaultVersion);
-        }
-        const helperPath = "/usr/local/bin/devin-oidc-vault-token-helper";
-        await (0, drs_1.writeFileWithSudo)(helperPath, tokenHelperScript({ vaultAddr, role, authMount, audience, subjectKeys, vaultNamespace }));
-        await (0, drs_1.run)(`sudo chmod 755 "${helperPath}"`);
-        writeVaultConfig(helperPath);
-        (0, drs_1.exportVariable)("VAULT_ADDR", vaultAddr);
-        if (vaultNamespace) {
-            (0, drs_1.exportVariable)("VAULT_NAMESPACE", vaultNamespace);
-        }
-        core.info("HashiCorp Vault OIDC authentication configured. " +
-            "The vault CLI will automatically obtain tokens via Devin OIDC.");
-    }
-    catch (error) {
-        core.setFailed(error instanceof Error ? error.message : String(error));
-    }
-}
-main();
 
 
 /***/ }),
@@ -25847,11 +25859,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -26006,7 +26018,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 

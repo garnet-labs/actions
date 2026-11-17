@@ -25685,42 +25685,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(7484));
 const drs_1 = __nccwpck_require__(1581);
 const devin_oidc_cli_1 = __nccwpck_require__(7881);
-/**
- * Shell script installed as the executable credential source for GCP
- * Workload Identity Federation. Re-invoked by gcloud/Google SDKs whenever a
- * fresh subject token is needed; the exchanged Devin OIDC token is
- * short-lived, so a static credential file would go stale.
- */
-function credentialHelperScript(inputs) {
-    return `#!/usr/bin/env bash
-set -euo pipefail
-
-# devin-oidc-gcp-token-helper: executable credential source for GCP Workload
-# Identity Federation. Prints the executable-sourced credential JSON expected
-# by gcloud and the Google Cloud client libraries.
-
-AUDIENCE="${inputs.audience}"
-SUBJECT_KEYS="${inputs.subjectKeys}"
-
-die() { echo "devin-oidc-gcp: $1" >&2; exit 1; }
-
-b64url_decode() {
-  local s="\${1//-/+}"
-  s="\${s//_//}"
-  while [ $((\${#s} % 4)) -ne 0 ]; do s="$s="; done
-  printf '%s' "$s" | base64 -d
-}
-
-token=$(devin-oidc token --audience "$AUDIENCE" --subject-keys "$SUBJECT_KEYS") \\
-  || die "failed to obtain OIDC token"
-
-payload=$(b64url_decode "$(printf '%s' "$token" | cut -d. -f2)")
-exp=$(printf '%s' "$payload" | grep -o '"exp"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
-[ -n "$exp" ] || die "could not read exp claim from the exchanged token"
-
-printf '{"version":1,"success":true,"token_type":"urn:ietf:params:oauth:token-type:jwt","id_token":"%s","expiration_time":%s}' "$token" "$exp"
-`;
-}
+const scripts_1 = __nccwpck_require__(4838);
 /**
  * External account (Workload Identity Federation) credential configuration
  * consumed by gcloud and the Google Cloud client libraries via
@@ -25777,7 +25742,7 @@ async function main() {
             await installGcloudCli();
         }
         const helperPath = "/usr/local/bin/devin-oidc-gcp-token-helper";
-        await (0, drs_1.writeFileWithSudo)(helperPath, credentialHelperScript({ audience, subjectKeys }));
+        await (0, drs_1.writeFileWithSudo)(helperPath, (0, scripts_1.credentialHelperScript)({ audience, subjectKeys }));
         await (0, drs_1.run)(`sudo chmod 755 "${helperPath}"`);
         const credFilePath = "/etc/devin-oidc/gcp-credentials.json";
         await (0, drs_1.writeFileWithSudo)(credFilePath, credentialConfig({ workloadIdentityProvider, serviceAccount, helperPath }));
@@ -25808,6 +25773,53 @@ main();
 
 /***/ }),
 
+/***/ 4838:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.credentialHelperScript = credentialHelperScript;
+/**
+ * Shell script installed as the executable credential source for GCP
+ * Workload Identity Federation. Re-invoked by gcloud/Google SDKs whenever a
+ * fresh subject token is needed; the exchanged Devin OIDC token is
+ * short-lived, so a static credential file would go stale.
+ */
+function credentialHelperScript(inputs) {
+    return `#!/usr/bin/env bash
+set -euo pipefail
+
+# devin-oidc-gcp-token-helper: executable credential source for GCP Workload
+# Identity Federation. Prints the executable-sourced credential JSON expected
+# by gcloud and the Google Cloud client libraries.
+
+AUDIENCE="${inputs.audience}"
+SUBJECT_KEYS="${inputs.subjectKeys}"
+
+die() { echo "devin-oidc-gcp: $1" >&2; exit 1; }
+
+b64url_decode() {
+  local s="\${1//-/+}"
+  s="\${s//_//}"
+  while [ $((\${#s} % 4)) -ne 0 ]; do s="$s="; done
+  printf '%s' "$s" | base64 -d
+}
+
+token=$(devin-oidc token --audience "$AUDIENCE" --subject-keys "$SUBJECT_KEYS") \\
+  || die "failed to obtain OIDC token"
+
+payload=$(b64url_decode "$(printf '%s' "$token" | cut -d. -f2)")
+exp=$(printf '%s' "$payload" | grep -o '"exp"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
+[ -n "$exp" ] || die "could not read exp claim from the exchanged token"
+
+printf '{"version":1,"success":true,"token_type":"urn:ietf:params:oauth:token-type:jwt","id_token":"%s","expiration_time":%s}' "$token" "$exp"
+`;
+}
+
+
+/***/ }),
+
 /***/ 7881:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -25829,11 +25841,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -25988,7 +26000,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 

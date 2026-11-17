@@ -25686,6 +25686,109 @@ const core = __importStar(__nccwpck_require__(7484));
 const fs = __importStar(__nccwpck_require__(9896));
 const drs_1 = __nccwpck_require__(1581);
 const devin_oidc_cli_1 = __nccwpck_require__(7881);
+const scripts_1 = __nccwpck_require__(2921);
+async function installAzureCli() {
+    core.info("Installing Azure CLI");
+    await (0, drs_1.run)("curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash");
+    const installed = await (0, drs_1.run)("az version --output json", { silent: true });
+    core.info(`Installed Azure CLI: ${installed}`);
+}
+async function resolveRealAz() {
+    let azPath = (await (0, drs_1.tryRun)("command -v az", { silent: true })).stdout.trim();
+    if (!azPath) {
+        return false;
+    }
+    const realAzPath = "/usr/local/bin/.az-real";
+    if (await (0, drs_1.commandExists)(realAzPath)) {
+        return true;
+    }
+    if (azPath === "/usr/local/bin/az") {
+        try {
+            const wrapper = fs.readFileSync(azPath, "utf8");
+            const realAz = wrapper.match(/^REAL_AZ=(\S+)$/m)?.[1];
+            if (!realAz || realAz === azPath) {
+                core.warning("Could not resolve the real Azure CLI behind /usr/local/bin/az");
+                return false;
+            }
+            azPath = realAz;
+        }
+        catch {
+            core.warning("Could not read the existing /usr/local/bin/az wrapper");
+            return false;
+        }
+    }
+    await (0, drs_1.writeFileWithSudo)(realAzPath, (0, scripts_1.realAzShimScript)(azPath));
+    await (0, drs_1.run)(`sudo chmod 755 "${realAzPath}"`);
+    return true;
+}
+async function main() {
+    try {
+        const clientId = core.getInput("client-id", { required: true });
+        const tenantId = core.getInput("tenant-id", { required: true });
+        const subscriptionId = core.getInput("subscription-id");
+        const audience = core.getInput("audience") || "api://AzureADTokenExchange";
+        const subjectKeys = core.getInput("subject-keys") || "org_id";
+        const shouldInstallAzureCli = core.getInput("install-azure-cli") !== "false";
+        // 1. Install devin-oidc CLI
+        await (0, devin_oidc_cli_1.installDevinOidcCli)();
+        // 2. Install Azure CLI when requested and absent
+        let azAvailable = await (0, drs_1.commandExists)("az");
+        if (!azAvailable && shouldInstallAzureCli) {
+            await installAzureCli();
+            azAvailable = await (0, drs_1.commandExists)("az");
+        }
+        else if (azAvailable) {
+            const current = await (0, drs_1.run)("az version --output json", { silent: true });
+            core.info(`Azure CLI already installed: ${current}`);
+        }
+        else {
+            core.warning("Azure CLI not found; skipping Azure CLI wrapper and login");
+        }
+        // 3. Preserve the real Azure CLI before installing the wrapper
+        const hasRealAz = azAvailable && (await resolveRealAz());
+        // 4. Install the refresh helper
+        const refreshPath = "/usr/local/bin/devin-oidc-azure-refresh";
+        await (0, drs_1.writeFileWithSudo)(refreshPath, (0, scripts_1.refreshScript)({ clientId, tenantId, subscriptionId, audience, subjectKeys }));
+        await (0, drs_1.run)(`sudo chmod 755 "${refreshPath}"`);
+        // 5. Install the Azure CLI wrapper only when a real CLI is available
+        if (hasRealAz) {
+            await (0, drs_1.writeFileWithSudo)("/usr/local/bin/az", (0, scripts_1.wrapperScript)());
+            await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/az");
+        }
+        // 6. Initial login is non-fatal; the wrapper retries at runtime
+        const { exitCode: refreshExit } = await (0, drs_1.tryRun)(`${refreshPath} --force`, { silent: true });
+        if (refreshExit !== 0) {
+            core.warning("Initial Azure OIDC login failed — auth will be attempted on the first Azure CLI command");
+        }
+        // 7. Configure Azure SDK workload identity environment variables
+        const tokenFile = `${process.env.HOME || "/home/ubuntu"}/.azure-federated-token`;
+        (0, drs_1.exportVariable)("AZURE_CLIENT_ID", clientId);
+        (0, drs_1.exportVariable)("AZURE_TENANT_ID", tenantId);
+        (0, drs_1.exportVariable)("AZURE_FEDERATED_TOKEN_FILE", tokenFile);
+        (0, drs_1.exportVariable)("AZURE_AUTHORITY_HOST", "https://login.microsoftonline.com");
+        if (subscriptionId) {
+            (0, drs_1.exportVariable)("AZURE_SUBSCRIPTION_ID", subscriptionId);
+        }
+        core.info("Azure OIDC authentication configured. Azure CLI and Azure SDKs will obtain credentials via Devin OIDC.");
+    }
+    catch (error) {
+        core.setFailed(error instanceof Error ? error.message : String(error));
+    }
+}
+main();
+
+
+/***/ }),
+
+/***/ 2921:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.refreshScript = refreshScript;
+exports.wrapperScript = wrapperScript;
+exports.realAzShimScript = realAzShimScript;
 /**
  * Refreshes the Azure federated token file and, when needed, logs the Azure
  * CLI in with a fresh client assertion. The Azure SDKs consume the token file
@@ -25762,97 +25865,14 @@ esac
 exec "$REAL_AZ" "$@"
 `;
 }
-async function installAzureCli() {
-    core.info("Installing Azure CLI");
-    await (0, drs_1.run)("curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash");
-    const installed = await (0, drs_1.run)("az version --output json", { silent: true });
-    core.info(`Installed Azure CLI: ${installed}`);
+/**
+ * Exec shim installed at /usr/local/bin/.az-real. The Debian az launcher
+ * locates its Python runtime relative to its own path, so a symlink would
+ * break it.
+ */
+function realAzShimScript(azPath) {
+    return `#!/usr/bin/env bash\nexec "${azPath}" "$@"\n`;
 }
-async function resolveRealAz() {
-    let azPath = (await (0, drs_1.tryRun)("command -v az", { silent: true })).stdout.trim();
-    if (!azPath) {
-        return false;
-    }
-    const realAzPath = "/usr/local/bin/.az-real";
-    if (await (0, drs_1.commandExists)(realAzPath)) {
-        return true;
-    }
-    if (azPath === "/usr/local/bin/az") {
-        try {
-            const wrapper = fs.readFileSync(azPath, "utf8");
-            const realAz = wrapper.match(/^REAL_AZ=(\S+)$/m)?.[1];
-            if (!realAz || realAz === azPath) {
-                core.warning("Could not resolve the real Azure CLI behind /usr/local/bin/az");
-                return false;
-            }
-            azPath = realAz;
-        }
-        catch {
-            core.warning("Could not read the existing /usr/local/bin/az wrapper");
-            return false;
-        }
-    }
-    // The Debian az launcher locates its Python runtime relative to its own
-    // path, so a symlink would break it. Use an exec shim instead.
-    await (0, drs_1.writeFileWithSudo)(realAzPath, `#!/usr/bin/env bash\nexec "${azPath}" "$@"\n`);
-    await (0, drs_1.run)(`sudo chmod 755 "${realAzPath}"`);
-    return true;
-}
-async function main() {
-    try {
-        const clientId = core.getInput("client-id", { required: true });
-        const tenantId = core.getInput("tenant-id", { required: true });
-        const subscriptionId = core.getInput("subscription-id");
-        const audience = core.getInput("audience") || "api://AzureADTokenExchange";
-        const subjectKeys = core.getInput("subject-keys") || "org_id";
-        const shouldInstallAzureCli = core.getInput("install-azure-cli") !== "false";
-        // 1. Install devin-oidc CLI
-        await (0, devin_oidc_cli_1.installDevinOidcCli)();
-        // 2. Install Azure CLI when requested and absent
-        let azAvailable = await (0, drs_1.commandExists)("az");
-        if (!azAvailable && shouldInstallAzureCli) {
-            await installAzureCli();
-            azAvailable = await (0, drs_1.commandExists)("az");
-        }
-        else if (azAvailable) {
-            const current = await (0, drs_1.run)("az version --output json", { silent: true });
-            core.info(`Azure CLI already installed: ${current}`);
-        }
-        else {
-            core.warning("Azure CLI not found; skipping Azure CLI wrapper and login");
-        }
-        // 3. Preserve the real Azure CLI before installing the wrapper
-        const hasRealAz = azAvailable && (await resolveRealAz());
-        // 4. Install the refresh helper
-        const refreshPath = "/usr/local/bin/devin-oidc-azure-refresh";
-        await (0, drs_1.writeFileWithSudo)(refreshPath, refreshScript({ clientId, tenantId, subscriptionId, audience, subjectKeys }));
-        await (0, drs_1.run)(`sudo chmod 755 "${refreshPath}"`);
-        // 5. Install the Azure CLI wrapper only when a real CLI is available
-        if (hasRealAz) {
-            await (0, drs_1.writeFileWithSudo)("/usr/local/bin/az", wrapperScript());
-            await (0, drs_1.run)("sudo chmod 755 /usr/local/bin/az");
-        }
-        // 6. Initial login is non-fatal; the wrapper retries at runtime
-        const { exitCode: refreshExit } = await (0, drs_1.tryRun)(`${refreshPath} --force`, { silent: true });
-        if (refreshExit !== 0) {
-            core.warning("Initial Azure OIDC login failed — auth will be attempted on the first Azure CLI command");
-        }
-        // 7. Configure Azure SDK workload identity environment variables
-        const tokenFile = `${process.env.HOME || "/home/ubuntu"}/.azure-federated-token`;
-        (0, drs_1.exportVariable)("AZURE_CLIENT_ID", clientId);
-        (0, drs_1.exportVariable)("AZURE_TENANT_ID", tenantId);
-        (0, drs_1.exportVariable)("AZURE_FEDERATED_TOKEN_FILE", tokenFile);
-        (0, drs_1.exportVariable)("AZURE_AUTHORITY_HOST", "https://login.microsoftonline.com");
-        if (subscriptionId) {
-            (0, drs_1.exportVariable)("AZURE_SUBSCRIPTION_ID", subscriptionId);
-        }
-        core.info("Azure OIDC authentication configured. Azure CLI and Azure SDKs will obtain credentials via Devin OIDC.");
-    }
-    catch (error) {
-        core.setFailed(error instanceof Error ? error.message : String(error));
-    }
-}
-main();
 
 
 /***/ }),
@@ -25878,11 +25898,11 @@ main();
  * VMs), then the public git-manager host.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.DEVIN_OIDC_CLI_PATH = void 0;
+exports.DEVIN_OIDC_SCRIPT = exports.DEVIN_OIDC_CLI_PATH = void 0;
 exports.installDevinOidcCli = installDevinOidcCli;
 const drs_1 = __nccwpck_require__(1581);
 exports.DEVIN_OIDC_CLI_PATH = "/usr/local/bin/devin-oidc";
-const DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
+exports.DEVIN_OIDC_SCRIPT = `#!/usr/bin/env bash
 # devin-oidc: exchange the Devin session's general OIDC token for a
 # short-lived audience-scoped OIDC token (RFC 8693 token exchange).
 set -euo pipefail
@@ -26037,7 +26057,7 @@ case "\${1:-}" in
 esac
 `;
 async function installDevinOidcCli() {
-    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, DEVIN_OIDC_SCRIPT);
+    await (0, drs_1.writeFileWithSudo)(exports.DEVIN_OIDC_CLI_PATH, exports.DEVIN_OIDC_SCRIPT);
     await (0, drs_1.run)(`sudo chmod 755 "${exports.DEVIN_OIDC_CLI_PATH}"`);
 }
 
