@@ -6,6 +6,31 @@ These actions are intended for the `initialize` section of a Devin environment b
 
 ## Available actions
 
+### Garnet record summary
+
+`garnet-record-summary` writes a short, finalized current-head Garnet record to
+the PR description, without copying execution trees. Run it after the trusted
+Garnet App posts or edits its comment (or after the recording workflow completes).
+It does not poll for finalization. Use trusted workflow code, never PR code, with
+`pull-requests: write`; do not run it with a token from an untrusted checkout.
+
+```yaml
+- uses: garnet-labs/actions/garnet-record-summary@devin/record-summary
+  with:
+    github-token: ${{ github.token }}
+    pr-number: ${{ github.event.issue.number }}
+    publish-draft: "false"
+    max-items: "8"
+```
+
+The managed block uses `<!-- garnet:record-summary:begin -->` / `end` delimiters.
+A nonfinal record leaves the description alone unless an older summary needs
+replacing with a current-head not-finalized notice. `publish-draft: "true"`
+marks a draft ready only after writing a finalized summary. An identical rerun
+does not write or publish. Existing human text is preserved. Counts and capture
+quality come from Garnet; the summary is evidence, not approval. Run tests with
+`node --test garnet-record-summary/test/*.test.mjs`.
+
 | Action | Description |
 | --- | --- |
 | [`setup-devin-oidc`](./setup-devin-oidc/README.md) | Install the base `devin-oidc` CLI for OIDC token exchange |

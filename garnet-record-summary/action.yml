@@ -1,0 +1,26 @@
+name: Garnet record summary
+description: Copy a short finalized, head-bound Garnet record into a PR description
+inputs:
+  github-token:
+    description: Token with pull-requests write permission
+    required: true
+  pr-number:
+    description: Pull request number in the current repository
+    required: true
+  publish-draft:
+    description: Mark a draft ready after writing its finalized record summary
+    default: "false"
+  max-items:
+    description: Maximum new workload behaviors to include
+    default: "8"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GARNET_GITHUB_TOKEN: ${{ inputs.github-token }}
+        GARNET_PR_NUMBER: ${{ inputs.pr-number }}
+        GARNET_PUBLISH_DRAFT: ${{ inputs.publish-draft }}
+        GARNET_MAX_ITEMS: ${{ inputs.max-items }}
+        GARNET_ACTION_PATH: ${{ github.action_path }}
+      run: node "$GARNET_ACTION_PATH/summary.mjs"
