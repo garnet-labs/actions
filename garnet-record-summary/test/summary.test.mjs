@@ -71,16 +71,22 @@ function mockAPI(pr, comments = [fixture], options = {}) {
   async function fetcher(url, init) {
     const path = new URL(url).pathname;
     calls.push({ path, ...init });
-    if (options.fail) return { ok: false, status: 403 };
+    if (options.fail || (path === "/graphql" && options.httpError)) {
+      return { ok: false, status: 403, json: async () => ({ message: "Resource not accessible" }) };
+    }
     let value = pr;
     if (path.endsWith("/comments")) value = comments;
     if (init.method === "PATCH") {
       Object.assign(pr, JSON.parse(init.body));
       value = pr;
     }
-    if (path === "/graphql") value = options.graphqlError ? { errors: [{ message: "denied" }] }
-      : { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } };
-    return { ok: true, json: async () => structuredClone(value) };
+    if (path === "/graphql") {
+      if (options.networkError) throw new Error("Network failed test-token\n::error::injected");
+      value = options.graphqlError ? { errors: [{ message: "denied test-token" }, { message: "missing permission" }] }
+        : options.empty ? {} : { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } };
+      if (!options.graphqlError && !options.empty) pr.draft = false;
+    }
+    return { ok: true, status: 200, json: async () => structuredClone(value) };
   }
   return { calls, fetcher };
 }
@@ -121,11 +127,48 @@ test("publication defaults off even for drafts", async () => {
   assert.ok(api.calls.every((c) => c.path !== "/graphql"));
 });
 
-test("API failures and GraphQL failures surface without exposing tokens", async () => {
+test("read API failures and invalid inputs remain fatal", async () => {
   const pr = { state: "open", head: { sha: head }, body: "", draft: true };
   await assert.rejects(run(env, mockAPI(pr, [], { fail: true }).fetcher), /403/);
-  await assert.rejects(run({ ...env, GARNET_PUBLISH_DRAFT: "true" }, mockAPI(pr, [fixture], { graphqlError: true }).fetcher, () => {}), /could not mark/);
   await assert.rejects(run({ ...env, GARNET_MAX_ITEMS: "NaN" }), /Valid/);
+});
+
+test("publication failures warn with sanitized diagnostics without failing the summary", async () => {
+  for (const [options, diagnostic] of [
+    [{ graphqlError: true }, /HTTP 200: denied \[REDACTED\]; missing permission/],
+    [{ httpError: true }, /HTTP 403: Resource not accessible/],
+    [{ empty: true }, /HTTP 200: response did not confirm isDraft: false/],
+    [{ networkError: true }, /Network failed \[REDACTED\]%0A::error::injected/],
+  ]) {
+    const pr = { state: "open", head: { sha: head }, body: "Human", draft: true, node_id: "PR_node" };
+    const api = mockAPI(pr, [fixture], options);
+    const logs = [];
+    await run({ ...env, GARNET_PUBLISH_DRAFT: "true" }, api.fetcher, (line) => logs.push(line));
+    assert.match(pr.body, /status: finalized/);
+    const warning = logs.find((line) => line.startsWith("::warning::"));
+    assert.match(warning, diagnostic);
+    assert.doesNotMatch(warning, /test-token|[\r\n]/);
+    assert.equal(pr.draft, true);
+  }
+});
+
+test("rerun recovers failed publication without rewriting the finalized block", async () => {
+  const pr = { state: "open", head: { sha: head }, body: "Human", draft: true, node_id: "PR_node" };
+  await run({ ...env, GARNET_PUBLISH_DRAFT: "true" }, mockAPI(pr, [fixture], { graphqlError: true }).fetcher, () => {});
+  const api = mockAPI(pr);
+  await run({ ...env, GARNET_PUBLISH_DRAFT: "true" }, api.fetcher, () => {});
+  assert.equal(api.calls.filter((c) => c.path === "/graphql").length, 1);
+  assert.ok(api.calls.every((c) => c.method !== "PATCH"));
+  assert.equal(pr.draft, false);
+});
+
+test("unchanged blocks do not publish without finalized evidence or opt-in", async () => {
+  for (const [comments, publish] of [[[], "true"], [[fixture], "false"]]) {
+    const pr = { state: "open", head: { sha: head }, body: nextBody("Human", record, head, 8), draft: true };
+    const api = mockAPI(pr, comments);
+    await run({ ...env, GARNET_PUBLISH_DRAFT: publish }, api.fetcher, () => {});
+    assert.ok(api.calls.every((c) => !c.method));
+  }
 });
 
 test("concurrent head or body changes prevent a stale write", async () => {

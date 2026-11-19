@@ -119,13 +119,18 @@ export async function run(env = process.env, fetcher = fetch, log = console.log)
     || !Number.isSafeInteger(maxItems) || maxItems < 0 || !["true", "false"].includes(publish)) {
     throw new Error("Valid github-token, repository, pr-number, publish-draft and nonnegative max-items are required");
   }
-  async function api(path, options = {}) {
+  async function api(path, options = {}, includeStatus = false) {
     const response = await fetcher(`${env.GITHUB_API_URL ?? "https://api.github.com"}${path}`, {
       ...options, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json" },
       signal: AbortSignal.timeout(30000),
     });
-    if (!response.ok) throw new Error(`GitHub ${options.method ?? "GET"} ${path}: ${response.status}`);
-    return response.json();
+    if (!response.ok) {
+      const result = await response.json().catch(() => null);
+      const messages = result?.errors?.map((error) => error.message).join("; ") || result?.message;
+      throw new Error(`GitHub ${options.method ?? "GET"} ${path}: HTTP ${response.status}${messages ? `: ${messages}` : ""}`);
+    }
+    const data = await response.json();
+    return includeStatus ? { data, status: response.status } : data;
   }
   const path = `/repos/${repo}/pulls/${number}`;
   const pr = await api(path);
@@ -141,25 +146,38 @@ export async function run(env = process.env, fetcher = fetch, log = console.log)
   const record = selectRecord(comments, head);
   const body = nextBody(pr.body ?? "", record, head, maxItems);
   if (!record) log("No trusted finalized summary matching the current head (missing, pending, stale or malformed).");
-  if (body === (pr.body ?? "")) { log("Description unchanged; nothing to do."); return; }
+  const unchanged = body === (pr.body ?? "");
+  if (unchanged) {
+    log("Description unchanged.");
+    if (!record || publish !== "true" || !pr.draft) return;
+  }
   if (body.length > 65536) throw new Error("Summary would exceed the PR description limit");
   const current = await api(path);
   if (current.state !== "open" || current.head.sha !== head || current.body !== pr.body) {
     log("PR changed while reading evidence; not writing."); return;
   }
-  await api(path, { method: "PATCH", body: JSON.stringify({ body }) });
-  log(record ? "Wrote finalized current-head summary." : "Replaced stale summary with a not-finalized notice.");
+  if (!unchanged) {
+    await api(path, { method: "PATCH", body: JSON.stringify({ body }) });
+    log(record ? "Wrote finalized current-head summary." : "Replaced stale summary with a not-finalized notice.");
+  }
   if (record && publish === "true" && current.draft) {
-    const latest = await api(path);
-    if (latest.state !== "open" || latest.head.sha !== head || latest.body !== body || !latest.draft) return;
-    const result = await api("/graphql", { method: "POST", body: JSON.stringify({
-      query: "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }",
-      variables: { id: latest.node_id },
-    }) });
-    if (result.errors?.length || result.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
-      throw new Error("GitHub could not mark the PR ready for review");
+    try {
+      const latest = await api(path);
+      if (latest.state !== "open" || latest.head.sha !== head || latest.body !== body || !latest.draft) return;
+      const { data: result, status } = await api("/graphql", { method: "POST", body: JSON.stringify({
+        query: "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }",
+        variables: { id: latest.node_id },
+      }) }, true);
+      if (result?.errors?.length || result?.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
+        const messages = result?.errors?.map((error) => error.message).join("; ") || "response did not confirm isDraft: false";
+        throw new Error(`HTTP ${status}: ${messages}`);
+      }
+      log("Marked draft ready for review.");
+    } catch (error) {
+      const message = String(error.message).replaceAll(token, "[REDACTED]")
+        .replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+      log(`::warning::GitHub could not mark the PR ready for review: ${message}`);
     }
-    log("Marked draft ready for review.");
   }
 }
 
